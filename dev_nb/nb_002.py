@@ -86,10 +86,34 @@ class ItemBase():
     def data(self): pass
 
 class ImageBase(ItemBase):
+    def __init__(self, shape):
+        self._shape = shape
+        self._flow=None
+        self._affine_mat=None
+        self.sample_kwargs = {}
+
+    @property
+    def shape(self): return self._shape
+
+    def __repr__(self): return f'{self.__class__.__name__} ({self.shape})'
+
     def lighting(self, func, *args, **kwargs): return self
     def pixel(self, func, *args, **kwargs): return self
-    def coord(self, func, *args, **kwargs): return self
-    def affine(self, func, *args, **kwargs): return self
+
+    def coord(self, func, *args, **kwargs):
+        self.flow = func(self.flow, self.shape, *args, **kwargs)
+        return self
+
+    def affine(self, func, *args, **kwargs):
+        m = func(*args, **kwargs)
+        self.affine_mat = self.affine_mat @ tensor(m)
+        return self
+
+    def resize(self, size):
+        assert self._flow is None
+        if isinstance(size, int): size=(self.shape[0], size, size)
+        self.flow = affine_grid(size)
+        return self
 
     def set_sample(self, **kwargs):
         self.sample_kwargs = kwargs
@@ -97,18 +121,40 @@ class ImageBase(ItemBase):
 
     def clone(self): return self.__class__(self.data.clone())
 
-class Image(ImageBase):
-    def __init__(self, px):
-        self._px = px
-        self._logit_px=None
-        self._flow=None
-        self._affine_mat=None
-        self.sample_kwargs = {}
+    @property
+    def flow(self):
+        if self._flow is None:
+            self._flow = affine_grid(self.shape)
+        if self._affine_mat is not None:
+            self._flow = affine_mult(self._flow,self._affine_mat)
+            self._affine_mat = None
+        return self._flow
+
+    @flow.setter
+    def flow(self,v): self._flow=v
 
     @property
-    def shape(self): return self._px.shape
+    def affine_mat(self):
+        if self._affine_mat is None: self._affine_mat = self._px.new(torch.eye(3))
+        return self._affine_mat
+    @affine_mat.setter
+    def affine_mat(self,v): self._affine_mat=v
 
-    def __repr__(self): return f'{self.__class__.__name__} ({self.shape})'
+    def refresh(self):
+        if self._affine_mat is not None or self._flow is not None:
+            self.sample_kwargs = {}
+            self._flow = None
+
+    @property
+    def data(self): return self.flow
+
+class Image(ImageBase):
+    def __init__(self, px):
+        super().__init__(px.shape)
+        self._px = px
+        self._logit_px=None
+
+
 
     def refresh(self):
         if self._logit_px is not None:
@@ -125,18 +171,9 @@ class Image(ImageBase):
         self.refresh()
         return self._px
     @px.setter
-    def px(self,v): self._px=v
-
-    @property
-    def flow(self):
-        if self._flow is None:
-            self._flow = affine_grid(self.shape)
-        if self._affine_mat is not None:
-            self._flow = affine_mult(self._flow,self._affine_mat)
-            self._affine_mat = None
-        return self._flow
-    @flow.setter
-    def flow(self,v): self._flow=v
+    def px(self,v):
+        self._px=v
+        self.resize(self._px.shape)
 
     def lighting(self, func, *args, **kwargs):
         self.logit_px = func(self.logit_px, *args, **kwargs)
@@ -145,28 +182,6 @@ class Image(ImageBase):
     def pixel(self, func, *args, **kwargs):
         self.px = func(self.px, *args, **kwargs)
         return self
-
-    def coord(self, func, *args, **kwargs):
-        self.flow = func(self.flow, self.shape, *args, **kwargs)
-        return self
-
-    def affine(self, func, *args, **kwargs):
-        m = func(*args, **kwargs)
-        self.affine_mat = self.affine_mat @ self._px.new(m)
-        return self
-
-    def resize(self, size):
-        assert self._flow is None
-        if isinstance(size, int): size=(self.shape[0], size, size)
-        self.flow = affine_grid(size)
-        return self
-
-    @property
-    def affine_mat(self):
-        if self._affine_mat is None: self._affine_mat = self._px.new(torch.eye(3))
-        return self._affine_mat
-    @affine_mat.setter
-    def affine_mat(self,v): self._affine_mat=v
 
     @property
     def logit_px(self):

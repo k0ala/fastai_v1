@@ -36,12 +36,13 @@ class FilesDataset(LabelDataset):
         return (cls(fns[~is_test], labels[~is_test], classes=classes),
                 cls(fns[is_test], labels[is_test], classes=classes))
 
-def affine_mult(c,m,shape):
+def affine_mult(c,m,shape=None):
     if m is None: return c
     size = c.size()
-    h,w = shape
-    m[0,1] *= h/w
-    m[1,0] *= w/h
+    if shape:
+        h,w = shape
+        m[0,1] *= h/w
+        m[1,0] *= w/h
     c = c.view(-1,2)
     c = torch.addmm(m[:2,2], c,  m[:2,:2].t())
     return c.view(size)

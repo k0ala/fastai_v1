@@ -118,7 +118,7 @@ class ImageBase(ItemBase):
         if self._flow is None:
             self._flow = affine_grid_points(self.shape)
         if self._affine_mat is not None:
-            self._flow = affine_mult(self._flow,self._affine_mat)
+            self._flow = affine_mult(self._flow,self._affine_mat, self.shape)
             self._affine_mat = None
         return self._flow
 
@@ -393,7 +393,7 @@ def affine_grid_points(size):
     grid = affine_grid(size)
     return grid.view(grid.shape[0],-1,2)
 
-def affine_mult(c,m):
+def affine_mult(c,m,shape):
     if m is None: return c
     size = c.size()
     c = c.view(-1,2)
@@ -494,4 +494,4 @@ def zoom_squish(c, size, scale:uniform=1.0, squish:uniform=1.0, invert:rand_bool
     #can try a few zoom/squishes before falling back to center crop (like torchvision.RandomResizedCrop)
     #set_trace()
     m = compute_zs_mat(size, scale, squish, invert, row_pct, col_pct)
-    return affine_mult(c, FloatTensor(m))
+    return affine_mult(c, FloatTensor(m), size)

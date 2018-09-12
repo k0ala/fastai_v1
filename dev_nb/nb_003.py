@@ -36,10 +36,10 @@ class FilesDataset(LabelDataset):
         return (cls(fns[~is_test], labels[~is_test], classes=classes),
                 cls(fns[is_test], labels[is_test], classes=classes))
 
-def affine_mult(c,m):
+def affine_mult(c,m,shape):
     if m is None: return c
     size = c.size()
-    _,h,w,_ = size
+    h,w = shape
     m[0,1] *= h/w
     m[1,0] *= w/h
     c = c.view(-1,2)
@@ -75,10 +75,10 @@ def get_crop_target(target_px, mult=32):
 
 def get_resize_target(img, crop_target, do_crop=False):
     if crop_target is None: return None
-    ch,r,c = img.shape
+    r,c = img.shape
     target_r,target_c = crop_target
     ratio = (min if do_crop else max)(r/target_r, c/target_c)
-    return ch,round(r/ratio),round(c/ratio)
+    return round(r/ratio),round(c/ratio)
 
 def is_listy(x)->bool: return isinstance(x, (tuple,list))
 

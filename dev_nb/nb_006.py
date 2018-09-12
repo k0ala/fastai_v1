@@ -16,6 +16,27 @@ class ImageMask(Image):
 def open_mask(fn):
     return ImageMask(pil2tensor(PIL.Image.open(fn)).float())
 
+class DatasetTfm(Dataset):
+    def __init__(self, ds:Dataset,tfms:Collection[Callable]=None,tfm_y:bool=False, **kwargs):
+        self.ds,self.tfms,self.tfm_y,self.x_kwargs = ds,tfms,tfm_y,kwargs
+        self.y_kwargs = {**self.x_kwargs, 'do_resolve':False} # don't reset random vars
+
+    def __len__(self): return len(self.ds)
+
+    def __getitem__(self,idx):
+        x,y = self.ds[idx]
+
+        x = apply_tfms(self.tfms, x, **self.x_kwargs)
+        if self.tfm_y: y = apply_tfms(self.tfms, y, **self.y_kwargs)
+        return x, y
+
+    @property
+    def c(self): return self.ds.c
+
+import nb_002b,nb_005
+nb_002b.DatasetTfm = DatasetTfm
+nb_005.DatasetTfm  = DatasetTfm
+
 @dataclass
 class MatchedFilesDataset(Dataset):
     x_fns:List[Path]; y_fns:List[Path]

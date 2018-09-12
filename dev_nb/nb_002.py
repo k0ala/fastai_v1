@@ -109,22 +109,14 @@ class ImageBase(ItemBase):
         self.affine_mat = self.affine_mat @ tensor(m)
         return self
 
-    def resize(self, size):
-        assert self._flow is None
-        if isinstance(size, int): size=(self.shape[0], size, size)
-        self.flow = affine_grid(size)
-        return self
-
     def set_sample(self, **kwargs):
         self.sample_kwargs = kwargs
         return self
 
-    def clone(self): return self.__class__(self.data.clone())
-
     @property
     def flow(self):
         if self._flow is None:
-            self._flow = affine_grid(self.shape)
+            self._flow = affine_grid_points(self.shape)
         if self._affine_mat is not None:
             self._flow = affine_mult(self._flow,self._affine_mat)
             self._affine_mat = None
@@ -135,7 +127,7 @@ class ImageBase(ItemBase):
 
     @property
     def affine_mat(self):
-        if self._affine_mat is None: self._affine_mat = self._px.new(torch.eye(3))
+        if self._affine_mat is None: self._affine_mat = tensor(torch.eye(3))
         return self._affine_mat
     @affine_mat.setter
     def affine_mat(self,v): self._affine_mat=v
@@ -148,20 +140,25 @@ class ImageBase(ItemBase):
     @property
     def data(self): return self.flow
 
+    def clone(self):
+        clone = self.__class__(self.shape)
+        return clone
+
+
 class Image(ImageBase):
     def __init__(self, px):
-        super().__init__(px.shape)
+        C, H, W = px.shape
+        super().__init__((H,W))
         self._px = px
         self._logit_px=None
-
-
 
     def refresh(self):
         if self._logit_px is not None:
             self._px = self._logit_px.sigmoid_()
             self._logit_px = None
         if self._affine_mat is not None or self._flow is not None:
-            self._px = grid_sample(self._px, self.flow, **self.sample_kwargs)
+            coords = affine_points_to_grid(self.flow, *self.shape)
+            self._px = grid_sample(self._px, coords, **self.sample_kwargs)
             self.sample_kwargs = {}
             self._flow = None
         return self
@@ -173,7 +170,15 @@ class Image(ImageBase):
     @px.setter
     def px(self,v):
         self._px=v
-        self.resize(self._px.shape)
+        C, H, W = self._px.shape
+        self.resize((H,W))
+
+    def resize(self, size):
+        assert self._flow is None
+        if isinstance(size, int): size=(size, size)
+        self.flow = affine_grid_points(size)
+        self._shape = size
+        return self
 
     def lighting(self, func, *args, **kwargs):
         self.logit_px = func(self.logit_px, *args, **kwargs)
@@ -194,6 +199,10 @@ class Image(ImageBase):
 
     @property
     def data(self): return self.px
+
+    def clone(self):
+        clone = self.__class__(self.px.clone())
+        return clone
 
 def uniform(low, high, size=None):
     return random.uniform(low,high) if size is None else torch.FloatTensor(size).uniform_(low,high)
@@ -366,14 +375,13 @@ def grid_sample_nearest(input, coords, padding_mode='zeros'):
     if padding_mode=='zeros': result[...,mask] = result[...,mask].zero_()
     return result
 
-def grid_sample(x, coords, mode='bilinear', padding_mode='reflect'):
-    if padding_mode=='reflect': padding_mode='reflection'
-    if mode=='nearest': return grid_sample_nearest(x[None], coords, padding_mode)[0]
-    return F.grid_sample(x[None], coords, mode=mode, padding_mode=padding_mode)[0]
+
+def affine_points_to_grid(grid, h, w):
+    return grid.view(grid.shape[0],h,w,2)
 
 def affine_grid(size):
     size = ((1,)+size)
-    N, C, H, W = size
+    N, H, W = size
     grid = FloatTensor(N, H, W, 2)
     linear_points = torch.linspace(-1, 1, W) if W > 1 else torch.Tensor([-1])
     grid[:, :, :, 0] = torch.ger(torch.ones(H), linear_points).expand_as(grid[:, :, :, 0])
@@ -381,12 +389,22 @@ def affine_grid(size):
     grid[:, :, :, 1] = torch.ger(linear_points, torch.ones(W)).expand_as(grid[:, :, :, 1])
     return grid
 
+def affine_grid_points(size):
+    grid = affine_grid(size)
+    return grid.view(grid.shape[0],-1,2)
+
 def affine_mult(c,m):
     if m is None: return c
     size = c.size()
     c = c.view(-1,2)
     c = torch.addmm(m[:2,2], c,  m[:2,:2].t())
     return c.view(size)
+
+def grid_sample(x, coords, mode='bilinear', padding_mode='reflect'):
+    if padding_mode=='reflect': padding_mode='reflection'
+    if mode=='nearest': return grid_sample_nearest(x[None], coords, padding_mode)[0]
+    return F.grid_sample(x[None], coords, mode=mode, padding_mode=padding_mode)[0]
+
 
 class TfmAffine(Transform): order,_wrap = 5,'affine'
 class TfmPixel(Transform): order,_wrap = 10,'pixel'
@@ -454,7 +472,7 @@ def crop(x, size, row_pct:uniform=0.5, col_pct:uniform=0.5):
     return x[:, row:row+rows, col:col+cols].contiguous()
 
 def compute_zs_mat(sz, scale, squish, invert, row_pct, col_pct):
-    orig_ratio = math.sqrt(sz[2]/sz[1])
+    orig_ratio = math.sqrt(sz[1]/sz[0])
     for s,r,i in zip(scale,squish, invert):
         s,r = math.sqrt(s),math.sqrt(r)
         if s * r <= 1 and s / r <= 1: #Test if we are completely inside the picture
@@ -474,5 +492,6 @@ def zoom_squish(c, size, scale:uniform=1.0, squish:uniform=1.0, invert:rand_bool
                 row_pct:uniform=0.5, col_pct:uniform=0.5):
     #This is intended for scale, squish and invert to be of size 10 (or whatever) so that the transform
     #can try a few zoom/squishes before falling back to center crop (like torchvision.RandomResizedCrop)
+    #set_trace()
     m = compute_zs_mat(size, scale, squish, invert, row_pct, col_pct)
     return affine_mult(c, FloatTensor(m))

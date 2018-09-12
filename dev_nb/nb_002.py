@@ -113,13 +113,10 @@ class ImageBase(ItemBase):
         self.sample_kwargs = kwargs
         return self
 
-    def init_flow(self):
-        return None
-
     @property
     def flow(self):
         if self._flow is None:
-            self._flow = self.init_flow()
+            self._flow = affine_grid_points(self.shape)
         if self._affine_mat is not None:
             self._flow = affine_mult(self._flow,self._affine_mat, self.shape)
             self._affine_mat = None
@@ -136,11 +133,12 @@ class ImageBase(ItemBase):
     def affine_mat(self,v): self._affine_mat=v
 
     def refresh(self):
-        if self._affine_mat is not None or self._flow is not None:
-            self.sample_kwargs = {}
+        pass
+
 
     @property
-    def data(self): return self.flow
+    @abstractmethod
+    def data(self): pass
 
     def clone(self):
         clone = self.__class__(self.shape)
@@ -174,9 +172,6 @@ class Image(ImageBase):
         self._px=v
         C, H, W = self._px.shape
         self.resize((H,W))
-
-    def init_flow(self):
-        return affine_grid_points(self.shape)
 
     def resize(self, size):
         assert self._flow is None

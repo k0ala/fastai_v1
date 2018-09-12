@@ -39,7 +39,7 @@ class FilesDataset(LabelDataset):
 def affine_mult(c,m,shape=None):
     if m is None: return c
     size = c.size()
-    if shape:
+    if shape is not None:
         h,w = shape
         m[0,1] *= h/w
         m[1,0] *= w/h

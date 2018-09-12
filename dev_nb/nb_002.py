@@ -113,10 +113,13 @@ class ImageBase(ItemBase):
         self.sample_kwargs = kwargs
         return self
 
+    def init_flow(self):
+        return None
+
     @property
     def flow(self):
         if self._flow is None:
-            self._flow = affine_grid_points(self.shape)
+            self._flow = self.init_flow()
         if self._affine_mat is not None:
             self._flow = affine_mult(self._flow,self._affine_mat, self.shape)
             self._affine_mat = None
@@ -135,7 +138,6 @@ class ImageBase(ItemBase):
     def refresh(self):
         if self._affine_mat is not None or self._flow is not None:
             self.sample_kwargs = {}
-            self._flow = None
 
     @property
     def data(self): return self.flow
@@ -173,6 +175,9 @@ class Image(ImageBase):
         C, H, W = self._px.shape
         self.resize((H,W))
 
+    def init_flow(self):
+        return affine_grid_points(self.shape)
+
     def resize(self, size):
         assert self._flow is None
         if isinstance(size, int): size=(size, size)
@@ -203,6 +208,8 @@ class Image(ImageBase):
     def clone(self):
         clone = self.__class__(self.px.clone())
         return clone
+
+
 
 def uniform(low, high, size=None):
     return random.uniform(low,high) if size is None else torch.FloatTensor(size).uniform_(low,high)
@@ -393,7 +400,7 @@ def affine_grid_points(size):
     grid = affine_grid(size)
     return grid.view(grid.shape[0],-1,2)
 
-def affine_mult(c,m,shape):
+def affine_mult(c,m):
     if m is None: return c
     size = c.size()
     c = c.view(-1,2)
